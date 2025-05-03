@@ -1,0 +1,9 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net462;netstandard2.1;net6.0;net8.0</TargetFrameworks>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/jakegough-jaytwo/jaytwo.HashSiphon</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+</Project>

@@ -4,12 +4,19 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using Force.Crc32;
 using Xunit;
 
 namespace jaytwo.HashSiphon.Tests;
 
 public class HashSiphonStreamTests
 {
+    [Theory]
+    [InlineData("helloworld.txt", "97F73FF3")]
+    [InlineData("lipsum.txt", "8F827C30")]
+    public async Task CRC32_produces_expected_hash_hex(string file, string expectedHashHex)
+        => await AssertHashMatches(file, expectedHashHex, x => new HashSiphonStream(x, new Crc32Algorithm()));
+
     [Theory]
     [InlineData("helloworld.txt", "29b933a8d9a0fcef0af75f1713f4940e")]
     [InlineData("lipsum.txt", "c545355fdbfbfb5149dbe35bea3ff6e8")]

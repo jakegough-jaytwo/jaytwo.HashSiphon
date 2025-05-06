@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace jaytwo.HashSiphon;
@@ -9,14 +10,20 @@ public class HashSiphonStream : Stream
 {
     private readonly Stream _innerStream;
     private readonly HashAlgorithm _hashAlgorithm;
+    private readonly bool _leaveInnerStreamOpen;
+    private readonly StreamDirection _streamDirection;
     private bool _finalized = false;
     private byte[]? _finalHash;
 
-    public HashSiphonStream(Stream innerStream, HashAlgorithm hashAlgorithm)
+    public HashSiphonStream(Stream innerStream, Func<HashAlgorithm> hashAlgorithmFactory, StreamDirection streamDirection, bool leaveInnerStreamOpen = false)
     {
         _innerStream = innerStream ?? throw new ArgumentNullException(nameof(innerStream));
-        _hashAlgorithm = hashAlgorithm ?? throw new ArgumentNullException(nameof(hashAlgorithm));
+        _hashAlgorithm = hashAlgorithmFactory?.Invoke() ?? throw new ArgumentNullException(nameof(hashAlgorithmFactory));
+        _leaveInnerStreamOpen = leaveInnerStreamOpen;
+        _streamDirection = streamDirection;
     }
+
+    public bool IsHashAvailable => _finalized;
 
     public byte[]? Hash
     {
@@ -31,11 +38,11 @@ public class HashSiphonStream : Stream
         }
     }
 
-    public override bool CanRead => _innerStream.CanRead;
+    public override bool CanRead => _streamDirection == StreamDirection.Read && _innerStream.CanRead;
 
     public override bool CanSeek => false;
 
-    public override bool CanWrite => false;
+    public override bool CanWrite => _streamDirection == StreamDirection.Write && _innerStream.CanWrite;
 
     public override long Length => _innerStream.Length;
 
@@ -47,25 +54,79 @@ public class HashSiphonStream : Stream
 
     internal bool IsDisposed { get; private set; } = false;
 
-    public static HashSiphonStream CreateSHA256(Stream innerStream)
-        => new HashSiphonStream(innerStream, SHA256.Create());
+    public static HashSiphonStream CreateSHA256Read(Stream innerStream, bool leaveInnerStreamOpen = false)
+        => CreateRead(innerStream, () => SHA256.Create(), leaveInnerStreamOpen);
 
-    public static HashSiphonStream CreateSHA1(Stream innerStream)
-        => new HashSiphonStream(innerStream, SHA1.Create());
+    public static HashSiphonStream CreateSHA1Read(Stream innerStream, bool leaveInnerStreamOpen = false)
+        => CreateRead(innerStream, () => SHA1.Create(), leaveInnerStreamOpen);
 
-    public static HashSiphonStream CreateMD5(Stream innerStream)
-        => new HashSiphonStream(innerStream, MD5.Create());
+    public static HashSiphonStream CreateMD5Read(Stream innerStream, bool leaveInnerStreamOpen = false)
+        => CreateRead(innerStream, () => MD5.Create(), leaveInnerStreamOpen);
+
+    public static HashSiphonStream CreateSHA256Write(Stream innerStream, bool leaveInnerStreamOpen = false)
+        => CreateWrite(innerStream, () => SHA256.Create(), leaveInnerStreamOpen);
+
+    public static HashSiphonStream CreateSHA1Write(Stream innerStream, bool leaveInnerStreamOpen = false)
+        => CreateWrite(innerStream, () => SHA1.Create(), leaveInnerStreamOpen);
+
+    public static HashSiphonStream CreateMD5Write(Stream innerStream, bool leaveInnerStreamOpen = false)
+        => CreateWrite(innerStream, () => MD5.Create(), leaveInnerStreamOpen);
+
+    public static HashSiphonStream CreateRead(Stream innerStream, Func<HashAlgorithm> hashAlgorithm, bool leaveInnerStreamOpen = false)
+        => new(innerStream, hashAlgorithm, StreamDirection.Read, leaveInnerStreamOpen);
+
+    public static HashSiphonStream CreateWrite(Stream innerStream, Func<HashAlgorithm> hashAlgorithm, bool leaveInnerStreamOpen = false)
+        => new(innerStream, hashAlgorithm, StreamDirection.Write, leaveInnerStreamOpen);
+
+    public bool TryGetHash(out byte[]? hash)
+    {
+        hash = IsHashAvailable ? _finalHash : null;
+        return IsHashAvailable;
+    }
+
+    public bool TryGetHashHex(out string? hash)
+    {
+        hash = IsHashAvailable ? GetHashHex() : null;
+        return IsHashAvailable;
+    }
+
+    public bool TryGetHashBase64(out string? hash)
+    {
+        hash = IsHashAvailable ? GetHashBase64() : null;
+        return IsHashAvailable;
+    }
 
     public string GetHashHex() =>
-        _finalized ? BitConverter.ToString(_finalHash!).Replace("-", string.Empty).ToLowerInvariant() : string.Empty;
+        IsHashAvailable ? BitConverter.ToString(_finalHash!).Replace("-", string.Empty).ToLowerInvariant() : string.Empty;
 
     public string GetHashBase64() =>
-        _finalized ? Convert.ToBase64String(_finalHash!) : string.Empty;
+        IsHashAvailable ? Convert.ToBase64String(_finalHash!) : string.Empty;
 
-    public override void Flush() => _innerStream.Flush();
+    public void Flush(bool finalizeHash)
+    {
+        Flush();
+
+        if (finalizeHash && !_finalized)
+        {
+            FinalizeHash();
+        }
+    }
+
+    public override void Flush()
+    {
+        ThrowIfDisposed();
+        _innerStream.Flush();
+    }
 
     public override int Read(byte[] buffer, int offset, int count)
     {
+        if (_streamDirection != StreamDirection.Read)
+        {
+            throw new NotSupportedException($"{nameof(Read)} is not supported.");
+        }
+
+        ThrowIfDisposed();
+
         int readBytes = _innerStream.Read(buffer, offset, count);
 
         if (readBytes > 0)
@@ -74,10 +135,7 @@ public class HashSiphonStream : Stream
         }
         else if (!_finalized)
         {
-            // Finalize the hash when we reach the end of the stream
-            _hashAlgorithm.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-            _finalHash = _hashAlgorithm.Hash;
-            _finalized = true;
+            FinalizeHash();
         }
 
         return readBytes;
@@ -90,23 +148,98 @@ public class HashSiphonStream : Stream
         => throw new NotSupportedException($"{nameof(SetLength)} is not supported.");
 
     public override void Write(byte[] buffer, int offset, int count)
-        => throw new NotSupportedException($"{nameof(Write)} is not supported.");
+    {
+        if (_streamDirection != StreamDirection.Write)
+        {
+            throw new NotSupportedException($"{nameof(Write)} is not supported.");
+        }
+
+        ThrowIfDisposed();
+
+        _innerStream.Write(buffer, offset, count);
+        _hashAlgorithm.TransformBlock(buffer, offset, count, null, 0);
+    }
 
     public override void Close()
     {
         base.Close();
-        _innerStream.Close();
+
+        if (!_leaveInnerStreamOpen)
+        {
+            _innerStream.Close();
+        }
     }
 
 #if NET5_0_OR_GREATER
+
+    public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        if (_streamDirection != StreamDirection.Read)
+        {
+            throw new NotSupportedException($"{nameof(ReadAsync)} is not supported.");
+        }
+
+        ThrowIfDisposed();
+
+        int readBytes = await _innerStream.ReadAsync(buffer, offset, count, cancellationToken);
+
+        if (readBytes > 0)
+        {
+            _hashAlgorithm.TransformBlock(buffer, offset, readBytes, null, 0);
+        }
+        else if (!_finalized)
+        {
+            FinalizeHash();
+        }
+
+        return readBytes;
+    }
+
+    public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        if (_streamDirection != StreamDirection.Write)
+        {
+            throw new NotSupportedException($"{nameof(Write)} is not supported.");
+        }
+
+        ThrowIfDisposed();
+
+        await _innerStream.WriteAsync(buffer, offset, count, cancellationToken);
+        _hashAlgorithm.TransformBlock(buffer, offset, count, null, 0);
+    }
+
+    public async Task FlushAsync(bool finalizeHash, CancellationToken cancellationToken = default)
+    {
+        await FlushAsync();
+
+        if (finalizeHash && !_finalized)
+        {
+            FinalizeHash();
+        }
+    }
+
+    public override async Task FlushAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await _innerStream.FlushAsync(cancellationToken);
+    }
+
     public override async ValueTask DisposeAsync()
     {
+        if (!_finalized && _streamDirection == StreamDirection.Write)
+        {
+            FinalizeHash();
+        }
+
         // Dispose synchronous resources before awaiting
         _hashAlgorithm.Dispose();
 
         try
         {
-            await _innerStream.DisposeAsync().ConfigureAwait(false);
+            if (!_leaveInnerStreamOpen)
+            {
+                await _innerStream.DisposeAsync().ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -122,12 +255,41 @@ public class HashSiphonStream : Stream
     {
         if (disposing)
         {
+            if (!_finalized && _streamDirection == StreamDirection.Write)
+            {
+                FinalizeHash();
+            }
+
             _hashAlgorithm.Dispose();
-            _innerStream.Dispose();
+
+            if (!_leaveInnerStreamOpen)
+            {
+                _innerStream.Dispose();
+            }
         }
 
         base.Dispose(disposing);
 
         IsDisposed = true;
+    }
+
+    private void FinalizeHash()
+    {
+        if (_finalized)
+        {
+            return;
+        }
+
+        _hashAlgorithm.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+        _finalHash = _hashAlgorithm.Hash;
+        _finalized = true;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (IsDisposed)
+        {
+            throw new ObjectDisposedException(nameof(HashSiphonStream));
+        }
     }
 }

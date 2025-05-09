@@ -10,16 +10,18 @@ public class HashSiphonStream : Stream
 {
     private readonly Stream _innerStream;
     private readonly HashAlgorithm _hashAlgorithm;
-    private readonly bool _leaveInnerStreamOpen;
+    private readonly bool _leaveOpen;
     private readonly StreamDirection _streamDirection;
     private bool _finalized = false;
     private byte[]? _finalHash;
+    private long _bytesWritten = 0;
+    private long _bytesRead = 0;
 
-    public HashSiphonStream(Stream innerStream, Func<HashAlgorithm> hashAlgorithmFactory, StreamDirection streamDirection, bool leaveInnerStreamOpen = false)
+    public HashSiphonStream(Stream innerStream, Func<HashAlgorithm> hashAlgorithmFactory, StreamDirection streamDirection, bool leaveOpen = false)
     {
         _innerStream = innerStream ?? throw new ArgumentNullException(nameof(innerStream));
         _hashAlgorithm = hashAlgorithmFactory?.Invoke() ?? throw new ArgumentNullException(nameof(hashAlgorithmFactory));
-        _leaveInnerStreamOpen = leaveInnerStreamOpen;
+        _leaveOpen = leaveOpen;
         _streamDirection = streamDirection;
     }
 
@@ -37,6 +39,10 @@ public class HashSiphonStream : Stream
             return _finalHash;
         }
     }
+
+    public long BytesWritten => _bytesWritten;
+
+    public long BytesRead => _bytesRead;
 
     public override bool CanRead => _streamDirection == StreamDirection.Read && _innerStream.CanRead;
 
@@ -132,6 +138,7 @@ public class HashSiphonStream : Stream
         if (readBytes > 0)
         {
             _hashAlgorithm.TransformBlock(buffer, offset, readBytes, null, 0);
+            _bytesRead += readBytes;
         }
         else if (!_finalized)
         {
@@ -158,13 +165,14 @@ public class HashSiphonStream : Stream
 
         _innerStream.Write(buffer, offset, count);
         _hashAlgorithm.TransformBlock(buffer, offset, count, null, 0);
+        _bytesWritten += count;
     }
 
     public override void Close()
     {
         base.Close();
 
-        if (!_leaveInnerStreamOpen)
+        if (!_leaveOpen)
         {
             _innerStream.Close();
         }
@@ -186,6 +194,7 @@ public class HashSiphonStream : Stream
         if (readBytes > 0)
         {
             _hashAlgorithm.TransformBlock(buffer, offset, readBytes, null, 0);
+            _bytesRead += readBytes;
         }
         else if (!_finalized)
         {
@@ -206,6 +215,7 @@ public class HashSiphonStream : Stream
 
         await _innerStream.WriteAsync(buffer, offset, count, cancellationToken);
         _hashAlgorithm.TransformBlock(buffer, offset, count, null, 0);
+        _bytesWritten += count;
     }
 
     public async Task FlushAsync(bool finalizeHash, CancellationToken cancellationToken = default)
@@ -236,7 +246,7 @@ public class HashSiphonStream : Stream
 
         try
         {
-            if (!_leaveInnerStreamOpen)
+            if (!_leaveOpen)
             {
                 await _innerStream.DisposeAsync().ConfigureAwait(false);
             }
@@ -262,7 +272,7 @@ public class HashSiphonStream : Stream
 
             _hashAlgorithm.Dispose();
 
-            if (!_leaveInnerStreamOpen)
+            if (!_leaveOpen)
             {
                 _innerStream.Dispose();
             }

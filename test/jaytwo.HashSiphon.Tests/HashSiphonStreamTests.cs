@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Force.Crc32;
 using Xunit;
@@ -516,6 +517,150 @@ public class HashSiphonStreamTests
         Assert.False(innerStream.IsDisposed);
     }
 
+    [Fact]
+    public void CanRead_returns_true_only_in_read_mode()
+    {
+        using var stream = new MemoryStream();
+        using var readStream = HashSiphonStream.CreateMD5Read(stream);
+        using var writeStream = HashSiphonStream.CreateMD5Write(stream);
+
+        Assert.True(readStream.CanRead);
+        Assert.False(writeStream.CanRead);
+    }
+
+    [Fact]
+    public void CanWrite_returns_true_only_in_write_mode()
+    {
+        using var stream = new MemoryStream();
+        using var readStream = HashSiphonStream.CreateMD5Read(stream);
+        using var writeStream = HashSiphonStream.CreateMD5Write(stream);
+
+        Assert.False(readStream.CanWrite);
+        Assert.True(writeStream.CanWrite);
+    }
+
+    [Fact]
+    public void CanSeek_is_always_false()
+    {
+        using var stream = new MemoryStream();
+        using var readStream = HashSiphonStream.CreateMD5Read(stream);
+        using var writeStream = HashSiphonStream.CreateMD5Write(stream);
+
+        Assert.False(readStream.CanSeek);
+        Assert.False(writeStream.CanSeek);
+    }
+
+    [Fact]
+    public void Position_returns_inner_stream_position()
+    {
+        using var innerStream = new MemoryStream(new byte[100]);
+        innerStream.Position = 42;
+
+        using var hashStream = HashSiphonStream.CreateMD5Read(innerStream);
+
+        Assert.Equal(42, hashStream.Position);
+    }
+
+    [Fact]
+    public void Length_returns_inner_stream_length()
+    {
+        using var innerStream = new MemoryStream(new byte[100]);
+
+        using var hashStream = HashSiphonStream.CreateMD5Read(innerStream);
+
+        Assert.Equal(100, hashStream.Length);
+    }
+
+    [Fact]
+    public void TryGetHash_returns_true_after_dispose_without_finalization()
+    {
+        var stream = new MemoryStream(Encoding.UTF8.GetBytes("banana"));
+        var hashStream = HashSiphonStream.CreateMD5Write(stream);
+        hashStream.Dispose(); // No explicit Flush(true)
+
+        Assert.True(hashStream.TryGetHash(out _));
+        Assert.True(hashStream.TryGetHashHex(out _));
+        Assert.True(hashStream.TryGetHashBase64(out _));
+    }
+
+    [Fact]
+    public async Task FlushAsync_calls_inner_flush_async()
+    {
+        var inner = new TrackingStream();
+        var hashStream = HashSiphonStream.CreateMD5Read(inner);
+
+        await hashStream.FlushAsync();
+
+        Assert.True(inner.FlushAsyncCalled);
+    }
+
+    [Fact]
+    public void BytesRead_increments_with_read_operations()
+    {
+        // Arrange
+        byte[] data = Encoding.UTF8.GetBytes("abcdef");
+        using var innerStream = new MemoryStream(data);
+        using var hashStream = HashSiphonStream.CreateMD5Read(innerStream);
+
+        byte[] buffer = new byte[3];
+
+        // Act
+        int firstRead = hashStream.Read(buffer, 0, buffer.Length);  // Should read 3
+        int secondRead = hashStream.Read(buffer, 0, buffer.Length); // Should read 3
+        int thirdRead = hashStream.Read(buffer, 0, buffer.Length);  // Should read 0 (EOF)
+
+        // Assert
+        Assert.Equal(3, firstRead);
+        Assert.Equal(3, secondRead);
+        Assert.Equal(0, thirdRead);
+        Assert.Equal(6, hashStream.BytesRead);
+    }
+
+    [Fact]
+    public void BytesWritten_increments_with_write_operations()
+    {
+        // Arrange
+        using var innerStream = new MemoryStream();
+        using var hashStream = HashSiphonStream.CreateMD5Write(innerStream);
+
+        byte[] buffer1 = Encoding.UTF8.GetBytes("abc");
+        byte[] buffer2 = Encoding.UTF8.GetBytes("defg");
+
+        // Act
+        hashStream.Write(buffer1, 0, buffer1.Length);
+        hashStream.Write(buffer2, 0, buffer2.Length);
+
+        // Assert
+        Assert.Equal(3 + 4, hashStream.BytesWritten);
+    }
+
+    [Fact]
+    public async Task BytesRead_increments_with_async_reads()
+    {
+        byte[] data = Encoding.UTF8.GetBytes("123456");
+        using var innerStream = new MemoryStream(data);
+        using var hashStream = HashSiphonStream.CreateMD5Read(innerStream);
+
+        byte[] buffer = new byte[2];
+        while (await hashStream.ReadAsync(buffer, 0, buffer.Length) > 0)
+        {
+        }
+
+        Assert.Equal(6, hashStream.BytesRead);
+    }
+
+    [Fact]
+    public async Task BytesWritten_increments_with_async_writes()
+    {
+        using var innerStream = new MemoryStream();
+        using var hashStream = HashSiphonStream.CreateMD5Write(innerStream);
+
+        byte[] buffer = Encoding.UTF8.GetBytes("testing");
+        await hashStream.WriteAsync(buffer, 0, buffer.Length);
+
+        Assert.Equal(buffer.Length, hashStream.BytesWritten);
+    }
+
     private static MemoryStream GetStreamFromString(string content) =>
         new MemoryStream(Encoding.UTF8.GetBytes(content));
 
@@ -594,4 +739,23 @@ public class HashSiphonStreamTests
     private Stream GetEmbeddedResourceStream(string file)
         => this.GetType().Assembly.GetManifestResourceStream(
             this.GetType().Assembly.GetManifestResourceNames().Single(x => x.EndsWith(file, StringComparison.OrdinalIgnoreCase)))!;
+
+    private class TrackingStream : MemoryStream
+    {
+        public bool IsDisposed { get; private set; }
+
+        public bool FlushAsyncCalled { get; private set; }
+
+        public override Task FlushAsync(CancellationToken cancellationToken)
+        {
+            FlushAsyncCalled = true;
+            return base.FlushAsync(cancellationToken);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
+        }
+    }
 }

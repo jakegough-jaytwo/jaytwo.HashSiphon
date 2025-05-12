@@ -472,7 +472,7 @@ public class HashSiphonStreamTests
     {
         using var innerStream = new TrackingStream();
 
-        using (var hashStream = HashSiphonStream.CreateMD5Read(innerStream, leaveInnerStreamOpen: false))
+        using (var hashStream = HashSiphonStream.CreateMD5Read(innerStream, leaveOpen: false))
         {
             // do nothing
         }
@@ -485,7 +485,7 @@ public class HashSiphonStreamTests
     {
         using var innerStream = new TrackingStream();
 
-        using (var hashStream = HashSiphonStream.CreateMD5Read(innerStream, leaveInnerStreamOpen: true))
+        using (var hashStream = HashSiphonStream.CreateMD5Read(innerStream, leaveOpen: true))
         {
             // do nothing
         }
@@ -498,7 +498,7 @@ public class HashSiphonStreamTests
     {
         using var innerStream = new TrackingStream();
 
-        var hashStream = HashSiphonStream.CreateMD5Read(innerStream, leaveInnerStreamOpen: false);
+        var hashStream = HashSiphonStream.CreateMD5Read(innerStream, leaveOpen: false);
 
         await hashStream.DisposeAsync();
 
@@ -510,7 +510,7 @@ public class HashSiphonStreamTests
     {
         using var innerStream = new TrackingStream();
 
-        var hashStream = HashSiphonStream.CreateMD5Read(innerStream, leaveInnerStreamOpen: true);
+        var hashStream = HashSiphonStream.CreateMD5Read(innerStream, leaveOpen: true);
 
         await hashStream.DisposeAsync();
 

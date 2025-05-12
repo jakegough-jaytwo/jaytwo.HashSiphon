@@ -60,29 +60,29 @@ public class HashSiphonStream : Stream
 
     internal bool IsDisposed { get; private set; } = false;
 
-    public static HashSiphonStream CreateSHA256Read(Stream innerStream, bool leaveInnerStreamOpen = false)
-        => CreateRead(innerStream, () => SHA256.Create(), leaveInnerStreamOpen);
+    public static HashSiphonStream CreateSHA256Read(Stream innerStream, bool leaveOpen = false)
+        => CreateRead(innerStream, () => SHA256.Create(), leaveOpen);
 
-    public static HashSiphonStream CreateSHA1Read(Stream innerStream, bool leaveInnerStreamOpen = false)
-        => CreateRead(innerStream, () => SHA1.Create(), leaveInnerStreamOpen);
+    public static HashSiphonStream CreateSHA1Read(Stream innerStream, bool leaveOpen = false)
+        => CreateRead(innerStream, () => SHA1.Create(), leaveOpen);
 
-    public static HashSiphonStream CreateMD5Read(Stream innerStream, bool leaveInnerStreamOpen = false)
-        => CreateRead(innerStream, () => MD5.Create(), leaveInnerStreamOpen);
+    public static HashSiphonStream CreateMD5Read(Stream innerStream, bool leaveOpen = false)
+        => CreateRead(innerStream, () => MD5.Create(), leaveOpen);
 
-    public static HashSiphonStream CreateSHA256Write(Stream innerStream, bool leaveInnerStreamOpen = false)
-        => CreateWrite(innerStream, () => SHA256.Create(), leaveInnerStreamOpen);
+    public static HashSiphonStream CreateSHA256Write(Stream innerStream, bool leaveOpen = false)
+        => CreateWrite(innerStream, () => SHA256.Create(), leaveOpen);
 
-    public static HashSiphonStream CreateSHA1Write(Stream innerStream, bool leaveInnerStreamOpen = false)
-        => CreateWrite(innerStream, () => SHA1.Create(), leaveInnerStreamOpen);
+    public static HashSiphonStream CreateSHA1Write(Stream innerStream, bool leaveOpen = false)
+        => CreateWrite(innerStream, () => SHA1.Create(), leaveOpen);
 
-    public static HashSiphonStream CreateMD5Write(Stream innerStream, bool leaveInnerStreamOpen = false)
-        => CreateWrite(innerStream, () => MD5.Create(), leaveInnerStreamOpen);
+    public static HashSiphonStream CreateMD5Write(Stream innerStream, bool leaveOpen = false)
+        => CreateWrite(innerStream, () => MD5.Create(), leaveOpen);
 
-    public static HashSiphonStream CreateRead(Stream innerStream, Func<HashAlgorithm> hashAlgorithm, bool leaveInnerStreamOpen = false)
-        => new(innerStream, hashAlgorithm, StreamDirection.Read, leaveInnerStreamOpen);
+    public static HashSiphonStream CreateRead(Stream innerStream, Func<HashAlgorithm> hashAlgorithm, bool leaveOpen = false)
+        => new(innerStream, hashAlgorithm, StreamDirection.Read, leaveOpen);
 
-    public static HashSiphonStream CreateWrite(Stream innerStream, Func<HashAlgorithm> hashAlgorithm, bool leaveInnerStreamOpen = false)
-        => new(innerStream, hashAlgorithm, StreamDirection.Write, leaveInnerStreamOpen);
+    public static HashSiphonStream CreateWrite(Stream innerStream, Func<HashAlgorithm> hashAlgorithm, bool leaveOpen = false)
+        => new(innerStream, hashAlgorithm, StreamDirection.Write, leaveOpen);
 
     public bool TryGetHash(out byte[]? hash)
     {
@@ -168,18 +168,6 @@ public class HashSiphonStream : Stream
         _bytesWritten += count;
     }
 
-    public override void Close()
-    {
-        base.Close();
-
-        if (!_leaveOpen)
-        {
-            _innerStream.Close();
-        }
-    }
-
-#if NET5_0_OR_GREATER
-
     public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
         if (_streamDirection != StreamDirection.Read)
@@ -220,7 +208,7 @@ public class HashSiphonStream : Stream
 
     public async Task FlushAsync(bool finalizeHash, CancellationToken cancellationToken = default)
     {
-        await FlushAsync();
+        await FlushAsync(cancellationToken);
 
         if (finalizeHash && !_finalized)
         {
@@ -233,6 +221,18 @@ public class HashSiphonStream : Stream
         ThrowIfDisposed();
         await _innerStream.FlushAsync(cancellationToken);
     }
+
+    public override void Close()
+    {
+        base.Close();
+
+        if (!_leaveOpen)
+        {
+            _innerStream.Close();
+        }
+    }
+
+#if NET5_0_OR_GREATER
 
     public override async ValueTask DisposeAsync()
     {

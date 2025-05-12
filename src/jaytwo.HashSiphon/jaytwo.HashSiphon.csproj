@@ -5,6 +5,11 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/jakegough-jaytwo/jaytwo.HashSiphon</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageReadmeFile>../../README.md</PackageReadmeFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Copy the file from the solution root -->
+    <None Include="..\..\README.md" Pack="true" PackagePath="" Link="README.md" />
+  </ItemGroup>
 </Project>

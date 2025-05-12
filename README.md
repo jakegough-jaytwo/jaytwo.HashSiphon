@@ -4,6 +4,21 @@
 [![NuGet Downloads](https://img.shields.io/nuget/dt/jaytwo.HashSiphon.svg?style=flat)](https://www.nuget.org/packages/jaytwo.HashSiphon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+jaytwo.HashSiphon is a .NET stream wrapper that computes a hash (SHA256, SHA1, MD5, or custom) while reading from or writing to a stream — without needing to buffer or read the stream twice.
+
+[View source on GitHub](https://github.com/jakegough-jaytwo/jaytwo.HashSiphon)
+
+## Features
+
+- Hash streams in real time (read or write)
+- SHA256, SHA1, MD5, or custom algorithm support
+- Works with Stream APIs like `CopyToAsync`, `WriteAsync`, etc.
+- Async and cancellation token support
+- Does not buffer or re-read the stream
+- Hash available after stream is fully consumed
+
+## Background
+
 Once or twice, I've accepted user uploads to an API which I then stream to an object store. Sometimes I want a hash of that file—whether for deduplication, verification, or future audit. Usually, however, the file isn't supplied with a hash up front.
 
 This package provides a way to hash the content **as it's being read from or written to** the underlying stream.
@@ -22,9 +37,11 @@ PM> Install-Package jaytwo.HashSiphon
 
 Wrap the input stream with a HashSiphonStream, then read it as usual. The hash becomes available after the stream is fully consumed.
 
-Read mode
+### Examples
 
 ```csharp
+// Example: Hashing While Reading
+
 using var input = File.OpenRead("myfile.txt");
 using var hashStream = HashSiphonStream.CreateSHA256Read(input);
 
@@ -35,8 +52,9 @@ await hashStream.CopyToAsync(output);
 Console.WriteLine(hashStream.GetHashHex());
 ```
 
-Write mode
 ```csharp
+// Example: Hashing While Writing
+
 using var output = File.Create("output.txt");
 using var hashStream = HashSiphonStream.CreateSHA256Write(output);
 
@@ -49,7 +67,7 @@ await hashStream.FlushAsync(finalizeHash: true);
 Console.WriteLine(hashStream.GetHashHex());
 ```
 
-Factory Methods
+### Factory Methods
 
 | Method                | Description                           |
 | --------------------- | ------------------------------------- |
@@ -63,6 +81,8 @@ Factory Methods
 | `CreateWrite()`       | Custom algorithm, write mode          |
 
 
+### Custom Algorithms
+
 If you want to use a custom HashAlgorithm:
 
 ```csharp
@@ -75,8 +95,8 @@ All constructors and overloads accept `leaveInnerStreamOpen = true` if you don't
 ## Notes
 
 * In read mode: `Hash` (and `GetHashHex()` / `GetHashBase64()`) will return null or empty until the stream is fully read.
-* In write mode: `Hash` (and `GetHashHex()` / `GetHashBase64()`) will return null or empty until the stream is eitehr disposed or flushed with `finalizeHash = true`.
-* You can use any of the `TryGetHash()` variants if you want check for the hash availability and retreive the hash in a single line (though honestly, I don't understand the use case of not knowing whether the hash is ready yet).
+* In write mode: `Hash` (and `GetHashHex()` / `GetHashBase64()`) will return null or empty until the stream is either disposed or flushed with `finalizeHash = true`.
+* You can use any of the `TryGetHash()` variants if you want to check for the hash availability and retrieve the hash in a single line (it's mostly there for completeness in case you're checking hash readiness mid-stream).
 * Supports `DisposeAsync()` and cancellation tokens on .NET 5+.
 * `Seek` and `SetLength` are not supported.
 

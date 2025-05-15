@@ -27,18 +27,17 @@ public class HashSiphonStream : Stream
 
     public bool IsHashAvailable => _finalized;
 
-    public byte[]? Hash
-    {
-        get
-        {
-            if (!_finalized)
-            {
-                return null;
-            }
+    public byte[]? Hash => IsHashAvailable
+        ? _finalHash
+        : null;
 
-            return _finalHash;
-        }
-    }
+    public string? HashHex => IsHashAvailable
+        ? BitConverter.ToString(_finalHash!).Replace("-", string.Empty).ToLowerInvariant()
+        : null;
+
+    public string? HashBase64 => IsHashAvailable
+        ? Convert.ToBase64String(_finalHash!)
+        : null;
 
     public long BytesWritten => _bytesWritten;
 
@@ -92,21 +91,15 @@ public class HashSiphonStream : Stream
 
     public bool TryGetHashHex(out string? hash)
     {
-        hash = IsHashAvailable ? GetHashHex() : null;
+        hash = HashHex;
         return IsHashAvailable;
     }
 
     public bool TryGetHashBase64(out string? hash)
     {
-        hash = IsHashAvailable ? GetHashBase64() : null;
+        hash = HashBase64;
         return IsHashAvailable;
     }
-
-    public string GetHashHex() =>
-        IsHashAvailable ? BitConverter.ToString(_finalHash!).Replace("-", string.Empty).ToLowerInvariant() : string.Empty;
-
-    public string GetHashBase64() =>
-        IsHashAvailable ? Convert.ToBase64String(_finalHash!) : string.Empty;
 
     public void Flush(bool finalizeHash)
     {

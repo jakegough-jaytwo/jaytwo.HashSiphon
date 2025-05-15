@@ -9,7 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Copy the file from the solution root -->
+    <InternalsVisibleTo Include="jaytwo.HashSiphon.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
     <None Include="..\..\README.md" Pack="true" PackagePath="" Link="README.md" />
   </ItemGroup>
 </Project>

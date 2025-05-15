@@ -2,7 +2,7 @@
 
 [![NuGet Version](https://img.shields.io/nuget/v/jaytwo.HashSiphon.svg?style=flat&logo=nuget)](https://www.nuget.org/packages/jaytwo.HashSiphon)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/jaytwo.HashSiphon.svg?style=flat)](https://www.nuget.org/packages/jaytwo.HashSiphon)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://mit-license.org/)
 
 jaytwo.HashSiphon is a .NET stream wrapper that computes a hash (SHA256, SHA1, MD5, or custom) while reading from or writing to a stream — without needing to buffer or read the stream twice.
 
@@ -49,7 +49,7 @@ using var output = File.Create("copy.txt");
 await hashStream.CopyToAsync(output);
 
 // Final hash is now available
-Console.WriteLine(hashStream.GetHashHex());
+Console.WriteLine(hashStream.HashHex);
 ```
 
 ```csharp
@@ -64,7 +64,7 @@ await hashStream.WriteAsync(buffer, 0, buffer.Length);
 // finalize the hash without disposing
 await hashStream.FlushAsync(finalizeHash: true);
 
-Console.WriteLine(hashStream.GetHashHex());
+Console.WriteLine(hashStream.HashHex);
 ```
 
 ### Factory Methods
@@ -86,20 +86,27 @@ Console.WriteLine(hashStream.GetHashHex());
 If you want to use a custom HashAlgorithm:
 
 ```csharp
-var sha512Stream = new HashSiphonStream(myStream, () => SHA512.Create(), StreamDirection.Read);
+// I used this approach to write multiple generated XML documents into a ZIP package (which requires a CRC32 checksum for each entry) when streaming an XLSX file to a write-only output.
+
+using (var hashSiphonStream = HashSiphonStream.CreateWrite(_outputStream, () => new Crc32Algorithm(isBigEndian: false), leaveOpen: true))
+{
+    await WriteXml(hashSiphon);
+    await hashSiphonStream.FlushAsync(finalizeHash: true);
+    crc32 = BitConverter.ToUInt32(hashSiphon.Hash);
+}
 ```
 
-All constructors and overloads accept `leaveInnerStreamOpen = true` if you don't want the wrapped stream disposed when `HashSiphonStream` is disposed.
+All constructor overloads accept `leaveOpen = true` if you don't want the wrapped stream disposed when `HashSiphonStream` is disposed.
 
 
 ## Notes
 
-* In read mode: `Hash` (and `GetHashHex()` / `GetHashBase64()`) will return null or empty until the stream is fully read.
-* In write mode: `Hash` (and `GetHashHex()` / `GetHashBase64()`) will return null or empty until the stream is either disposed or flushed with `finalizeHash = true`.
-* You can use any of the `TryGetHash()` variants if you want to check for the hash availability and retrieve the hash in a single line (it's mostly there for completeness in case you're checking hash readiness mid-stream).
-* Supports `DisposeAsync()` and cancellation tokens on .NET 5+.
+* Hash computation is finalized automatically when a read stream hits EOF or when a write stream is flushed with `finalizeHash = true` or disposed.
+* `Hash` (and `HashHex` / `HashBase64`) will return null until the hash computation is finalized.
+* You can use any of the `TryGetHash()` variants to check for hash availability and retrieve the value in a single line. These are mostly useful for scenarios where you're uncertain whether the hash has been finalized yet (e.g., mid-stream inspection).
+* Supports `DisposeAsync()` on .NET 5+.
 * `Seek` and `SetLength` are not supported.
 
 ---
 
-Made with &hearts; by Jake
+Made with &hearts; by Jake — Licensed under the [MIT License](https://mit-license.org/)

@@ -111,7 +111,7 @@ public class HashSiphonStreamTests
         => await AssertWriteAsyncHashMatches(file, expectedHashHex, x => HashSiphonStream.CreateSHA256Write(x));
 
     [Fact]
-    public async Task GetHashBase64_produces_expected_encoded_hash()
+    public async Task HashBase64_produces_expected_encoded_hash()
     {
         // arrange
         using var stream = GetStreamFromString("banana");
@@ -119,14 +119,14 @@ public class HashSiphonStreamTests
         await ConsumeStreamAsync(hashSiphonStream);
 
         // act
-        var actual = hashSiphonStream.GetHashBase64();
+        var actual = hashSiphonStream.HashBase64;
 
         // assert
         Assert.Equal(Convert.ToBase64String(hashSiphonStream.Hash!), actual);
     }
 
     [Fact]
-    public async Task GetHashHex_produces_expected_encoded_hash()
+    public async Task HashHex_produces_expected_encoded_hash()
     {
         // arrange
         using var stream = GetStreamFromString("banana");
@@ -134,7 +134,7 @@ public class HashSiphonStreamTests
         await ConsumeStreamAsync(hashSiphonStream);
 
         // act
-        var actual = hashSiphonStream.GetHashHex();
+        var actual = hashSiphonStream.HashHex;
 
         // assert
         Assert.Equal(BitConverter.ToString(hashSiphonStream.Hash!).Replace("-", string.Empty).ToLowerInvariant(), actual);
@@ -151,8 +151,8 @@ public class HashSiphonStreamTests
 
         // assert
         Assert.Null(hashSiphonStream.Hash);
-        Assert.Equal(string.Empty, hashSiphonStream.GetHashHex());
-        Assert.Equal(string.Empty, hashSiphonStream.GetHashBase64());
+        Assert.Null(hashSiphonStream.HashHex);
+        Assert.Null(hashSiphonStream.HashBase64);
     }
 
     [Fact]
@@ -286,7 +286,7 @@ public class HashSiphonStreamTests
 
         // assert
         Assert.True(hashStream.IsHashAvailable);
-        Assert.Equal(BananaMd5Hex, hashStream.GetHashHex());
+        Assert.Equal(BananaMd5Hex, hashStream.HashHex);
     }
 
     [Fact]
@@ -303,7 +303,7 @@ public class HashSiphonStreamTests
 
         // assert
         Assert.True(hashStream.IsHashAvailable);
-        Assert.Equal(BananaMd5Hex, hashStream.GetHashHex());
+        Assert.Equal(BananaMd5Hex, hashStream.HashHex);
     }
 
     [Fact]
@@ -436,7 +436,7 @@ public class HashSiphonStreamTests
         hashStream.Flush(finalizeHash: true);
 
         Assert.True(hashStream.IsHashAvailable);
-        Assert.Equal(HashSiphonStreamTests.BananaMd5Hex, hashStream.GetHashHex());
+        Assert.Equal(HashSiphonStreamTests.BananaMd5Hex, hashStream.HashHex);
     }
 
     [Fact]
@@ -464,7 +464,7 @@ public class HashSiphonStreamTests
         await hashStream.FlushAsync(finalizeHash: true);
 
         Assert.True(hashStream.IsHashAvailable);
-        Assert.Equal(HashSiphonStreamTests.BananaMd5Hex, hashStream.GetHashHex());
+        Assert.Equal(HashSiphonStreamTests.BananaMd5Hex, hashStream.HashHex);
     }
 
     [Fact]
@@ -690,7 +690,7 @@ public class HashSiphonStreamTests
         ConsumeStream(hashSiphonStream);
 
         // assert
-        Assert.Equal(expectedHashHex, hashSiphonStream.GetHashHex(), ignoreCase: true);
+        Assert.Equal(expectedHashHex, hashSiphonStream.HashHex, ignoreCase: true);
     }
 
     private void AssertWriteHashMatches(string file, string expectedHashHex, Func<Stream, HashSiphonStream> hashSiphonStreamFactory)
@@ -705,7 +705,7 @@ public class HashSiphonStreamTests
         hashSiphonStream.Flush(finalizeHash: true);
 
         // assert
-        Assert.Equal(expectedHashHex, hashSiphonStream.GetHashHex(), ignoreCase: true);
+        Assert.Equal(expectedHashHex, hashSiphonStream.HashHex, ignoreCase: true);
     }
 
     private async Task AssertReadAsyncHashMatches(string file, string expectedHashHex, Func<Stream, HashSiphonStream> hashSiphonStreamFactory)
@@ -718,7 +718,7 @@ public class HashSiphonStreamTests
         await ConsumeStreamAsync(hashSiphonStream);
 
         // assert
-        Assert.Equal(expectedHashHex, hashSiphonStream.GetHashHex(), ignoreCase: true);
+        Assert.Equal(expectedHashHex, hashSiphonStream.HashHex, ignoreCase: true);
     }
 
     private async Task AssertWriteAsyncHashMatches(string file, string expectedHashHex, Func<Stream, HashSiphonStream> hashSiphonStreamFactory)
@@ -733,7 +733,7 @@ public class HashSiphonStreamTests
         await hashSiphonStream.FlushAsync(finalizeHash: true);
 
         // assert
-        Assert.Equal(expectedHashHex, hashSiphonStream.GetHashHex(), ignoreCase: true);
+        Assert.Equal(expectedHashHex, hashSiphonStream.HashHex, ignoreCase: true);
     }
 
     private Stream GetEmbeddedResourceStream(string file)

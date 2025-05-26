@@ -1,13 +1,14 @@
-TOPDIR=$(shell pwd)
-
 BUILD_SLN=./jaytwo.HashSiphon.sln
-BUILD_DIR=./src/jaytwo.HashSiphon
-BUILD_TEST_DIR=./test/jaytwo.HashSiphon.Tests
-BUILD_TRX_FILENAME=jaytwo.HashSiphon.Tests.trx
-BUILD_PACKED_DIR=${TOPDIR}/out/packed
+BUILD_DIRS=./src/jaytwo.HashSiphon
+BUILD_TEST_DIRS=./test/jaytwo.HashSiphon.Tests
 
 NUGET_SOURCE_URL?=https://api.nuget.org/v3/index.json
 NUGET_API_KEY?=__missing_api_key__
+
+TOPDIR=${CURDIR}
+BUILD_TEST_RESULTS_DIR=${TOPDIR}/out/testResults
+BUILD_TEST_COVERAGE_DIR=${TOPDIR}/out/coverage
+BUILD_PACKED_DIR=${TOPDIR}/out/packed
 
 DOCKER_TAG?=$(call getDockerTag,$(BUILD_SLN))
 DOCKER_BASE_TAG?=${DOCKER_TAG}__base
@@ -16,7 +17,7 @@ DOCKER_BUILDER_CONTAINER?=${DOCKER_BUILDER_TAG}
 DOCKER_RUN_MAKE_TARGETS?=run
 TIMESTAMP?=$(call getTimestamp)
 
-default: clean build
+default: clean deps build test pack-beta nuget-check
 
 deps:
 	dotnet tool install -g dotnet-reportgenerator-globaltool
@@ -35,38 +36,64 @@ build: restore
 
 test: unit-test
 
-unit-test: build
-	rm -rf "./out/testResults"
-	rm -rf "./out/coverage"
-	cd "${BUILD_TEST_DIR}"; \
-		dotnet test \
-		--results-directory "${TOPDIR}/out/testResults" \
-		--logger "trx;LogFileName=${BUILD_TRX_FILENAME}"
+unit-test:
+	rm -rf "${BUILD_TEST_RESULTS_DIR}"
+	rm -rf "${BUILD_TEST_COVERAGE_DIR}"
+	for dir in $$(echo "${BUILD_TEST_DIRS}" | tr ':' '\n'); do \
+		[ -n "$$dir" ] \
+			&& cd "${TOPDIR}" \
+			&& cd "$$dir" \
+			&& dotnet test \
+				--results-directory "${BUILD_TEST_RESULTS_DIR}" \
+				--logger "trx;LogFileName=$$(basename $$dir).trx"; \
+	done
 	reportgenerator \
-		"-reports:${TOPDIR}/out/coverage/**/coverage.cobertura.xml" \
-		"-targetdir:${TOPDIR}/out/coverage/" \
+		"-reports:${BUILD_TEST_COVERAGE_DIR}/**/coverage.cobertura.xml" \
+		"-targetdir:${BUILD_TEST_COVERAGE_DIR}/" \
 		"-reportTypes:Cobertura"
 	reportgenerator \
-		"-reports:${TOPDIR}/out/coverage/**/coverage.cobertura.xml" \
-		"-targetdir:${TOPDIR}/out/coverage/html" \
+		"-reports:${BUILD_TEST_COVERAGE_DIR}/**/coverage.cobertura.xml" \
+		"-targetdir:${BUILD_TEST_COVERAGE_DIR}/html" \
 		"-reportTypes:Html"
 
 pack:
-	rm -rf "${BUILD_PACKED_DIR}"; \
-	cd "${BUILD_DIR}"; \
-		dotnet pack -o "${BUILD_PACKED_DIR}" ${PACK_ARG}
+	rm -rf "${BUILD_PACKED_DIR}";
+	for dir in $$(echo "${BUILD_DIRS}" | tr ':' '\n'); do \
+		[ -n "$$dir" ] \
+			&& cd "${TOPDIR}" \
+			&& cd "$$dir" \
+			&& dotnet pack -o "${BUILD_PACKED_DIR}" ${PACK_ARG}; \
+	done
 
 pack-beta: PACK_ARG=--version-suffix beta-${TIMESTAMP}
 pack-beta: pack
 
 nuget-check:
-	PACKED_NUPKG_FILE="$(call getNupkg)"; \
-	nugetcheck "$$PACKED_NUPKG_FILE" -gte "$$PACKED_NUPKG_FILE" --same-major --fail-on-match && echo "Ready to push!" || "Failed NuGetCheck; cannot push."
+	PACKED_NUPKG_FILES="$(call getNupkgFiles)"; \
+	for nupkg in $$PACKED_NUPKG_FILES; do \
+		if [ -n "$$nupkg" ]; then \
+			nugetcheck \
+				"$$nupkg" \
+				-gte "$$nupkg" \
+				--same-major \
+				--fail-on-match \
+			&& echo "NuGetCheck OK: $$(basename $$nupkg)" \
+			|| echo "NuGetCheck Failed: $$(basename $$nupkg)"; \
+		fi; \
+	done
 
 nuget-push: nuget-check
 nuget-push:
-	PACKED_NUPKG_FILE="$(call getNupkg)"; \
-	dotnet nuget push "$$PACKED_NUPKG_FILE" --source "${NUGET_SOURCE_URL}" --api-key "$$NUGET_API_KEY"
+	PACKED_NUPKG_FILES="$(call getNupkgFiles)"; \
+	for nupkg in $$PACKED_NUPKG_FILES; do \
+		if [ -n "$$nupkg" ]; then \
+			dotnet nuget push \
+				"$$nupkg" \
+				--source "${NUGET_SOURCE_URL}" \
+				--api-key "$$NUGET_API_KEY"; \
+		fi; \
+	done
+
 
 docker-builder:
 	# building the base image to force caching those layers in an otherwise discarded stage of the multistage dockerfile
@@ -108,6 +135,6 @@ define getTimestamp
 $(shell date +'%Y%m%d%H%M%S')
 endef
 
-define getNupkg
+define getNupkgFiles
 $(shell ls -1 ${BUILD_PACKED_DIR}/*.nupkg)
 endef

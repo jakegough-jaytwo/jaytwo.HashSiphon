@@ -1,4 +1,4 @@
 library 'JenkinsBuilderLibrary'
 
-helper.loadNuGetProjectDefaults('jaytwo.HashSiphon')
-helper.runNuGetProject()
+nugetProject.build(
+    gitHubRepository: 'jaytwo.HashSiphon')
